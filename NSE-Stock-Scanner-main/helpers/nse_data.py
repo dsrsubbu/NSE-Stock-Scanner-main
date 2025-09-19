@@ -39,7 +39,12 @@ class NSEData:
         args:
            url: corresponding url
         '''
-        response = self.session.get(url, headers=self.headers, cookies=self.cookies)
+        try:
+            response = self.session.get(url, headers=self.headers, cookies=self.cookies)
+        except requests.exceptions.ConnectionError as e:
+            self._force_reset_session()
+            response = self.session.get(url, headers=self.headers, cookies=self.cookies)
+
         return response
     
 
@@ -49,10 +54,16 @@ class NSEData:
         args:
             show_n: Show top N sorted by ABSOLUTE % change Values such that -3.2 will be shown first than 2.3
         '''
-        df = pd.DataFrame(self.get_live_nse_data("https://www.nseindia.com/api/allIndices").json()['data'])
-        df['absolute_change'] = df['percentChange'].apply(lambda x: abs(x))
-        df.sort_values('absolute_change',ascending=False, inplace=True)
-        return df.iloc[:show_n,[1,5,0,4]]
+        try:
+            response = self.get_live_nse_data("https://www.nseindia.com/api/allIndices")
+            data = response.json()
+            df = pd.DataFrame(data['data'])
+            df['absolute_change'] = df['percentChange'].apply(lambda x: abs(x))
+            df.sort_values('absolute_change',ascending=False, inplace=True)
+            return df.iloc[:show_n,[1,5,0,4]]
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"Error decoding JSON or key error in current_indices_status: {e}")
+            return pd.DataFrame()
     
     
     def open_nse_index(self,index_name:str,show_n:int=10, drop_index:bool = True):
@@ -70,15 +81,19 @@ class NSEData:
 
         url = f"https://www.nseindia.com/api/equity-stockIndices?index={index_name}"
 
-        resp = self.get_live_nse_data(url)
-        
-        df = pd.DataFrame(resp.json()['data'])
-        df['absolute_change'] = df['pChange'].apply(lambda x: abs(x))
-        # df['Index'] = df['symbol'].apply(lambda x: In.get_index(x))
-        df.sort_values('absolute_change',ascending=False, inplace=True)
-        
-        if drop_index: df.drop(0,inplace = True) # Drop the index name
-        return df.iloc[:show_n,[1,9,3,4,5,6,-1]]
+        try:
+            resp = self.get_live_nse_data(url)
+            data = resp.json()
+            df = pd.DataFrame(data['data'])
+            df['absolute_change'] = df['pChange'].apply(lambda x: abs(x))
+            # df['Index'] = df['symbol'].apply(lambda x: In.get_index(x))
+            df.sort_values('absolute_change',ascending=False, inplace=True)
+
+            if drop_index: df.drop(0,inplace = True) # Drop the index name
+            return df.iloc[:show_n,[1,9,3,4,5,6,-1]]
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"Error decoding JSON or key error in open_nse_index for {index_name}: {e}")
+            return pd.DataFrame()
         
 
     def get_VIX(self, whole_data:bool = False):
@@ -90,10 +105,14 @@ class NSEData:
         args:
             whole_data: Get the Whole Current +  historical data of VIX
         '''
-        result = self.get_live_nse_data('https://www1.nseindia.com/live_market/dynaContent/live_watch/VixDetails.json').json()
-        if whole_data:
-            return result
-        print(f"Current VIX: {result['currentVixSnapShot'][0]['CURRENT_PRICE']}")
+        try:
+            result = self.get_live_nse_data('https://www1.nseindia.com/live_market/dynaContent/live_watch/VixDetails.json').json()
+            if whole_data:
+                return result
+            print(f"Current VIX: {result['currentVixSnapShot'][0]['CURRENT_PRICE']}")
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"Error decoding JSON or key error in get_VIX: {e}")
+            return None
 
 
     def fifty_days_data(self, symbol:str):
@@ -103,13 +122,18 @@ class NSEData:
             symbol: Listed name of the stock on NSE
         '''
         url = f"https://www.nseindia.com/api/historical/cm/equity?symbol={symbol}&series=[%22EQ%22]&from={self.from_}&to={self.to}"
-        result = self.get_live_nse_data(url = url)
-        df = pd.DataFrame(result.json()['data'])
-        df.columns = df.columns.map({'CH_SYMBOL':'SYMBOL',"CH_TRADE_HIGH_PRICE":"HIGH","CH_TRADE_LOW_PRICE":"LOW","CH_OPENING_PRICE":"OPEN","CH_CLOSING_PRICE":"CLOSE",
-                "CH_TIMESTAMP":"DATE","CH_52WEEK_LOW_PRICE":"52W L","CH_52WEEK_HIGH_PRICE":"52W H"})
+        try:
+            result = self.get_live_nse_data(url = url)
+            data = result.json()
+            df = pd.DataFrame(data['data'])
+            df.columns = df.columns.map({'CH_SYMBOL':'SYMBOL',"CH_TRADE_HIGH_PRICE":"HIGH","CH_TRADE_LOW_PRICE":"LOW","CH_OPENING_PRICE":"OPEN","CH_CLOSING_PRICE":"CLOSE",
+                    "CH_TIMESTAMP":"DATE","CH_52WEEK_LOW_PRICE":"52W L","CH_52WEEK_HIGH_PRICE":"52W H"})
 
-        df = df.loc[:,["DATE","OPEN","HIGH","LOW","CLOSE","52W H","52W L","SYMBOL"]] # to match previous API's Columns and structure
-        return df
+            df = df.loc[:,["DATE","OPEN","HIGH","LOW","CLOSE","52W H","52W L","SYMBOL"]] # to match previous API's Columns and structure
+            return df
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"Error decoding JSON or key error in fifty_days_data for {symbol}: {e}")
+            return pd.DataFrame()
 
 
     def stocks_at_52W(self, direction:str = 'high' ):
@@ -118,8 +142,13 @@ class NSEData:
         args:
             direction: direction of 52 Week. 'high', 'low'
         '''
-        x = self.get_live_nse_data(f'https://www.nseindia.com/api/live-analysis-52Week?index={direction}')
-        return pd.concat([pd.DataFrame(x.json()['dataLtpGreater20']), pd.DataFrame(x.json()['dataLtpLess20'])],ignore_index = True)
+        try:
+            x = self.get_live_nse_data(f'https://www.nseindia.com/api/live-analysis-52Week?index={direction}')
+            data = x.json()
+            return pd.concat([pd.DataFrame(data['dataLtpGreater20']), pd.DataFrame(data['dataLtpLess20'])],ignore_index = True)
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"Error decoding JSON or key error in stocks_at_52W for {direction}: {e}")
+            return pd.DataFrame()
 
     
     

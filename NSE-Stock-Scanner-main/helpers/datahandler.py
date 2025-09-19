@@ -63,25 +63,28 @@ class DataHandler:
         df = df[df[' SERIES'] == 'EQ']
         new = set(df['SYMBOL'].values.tolist())
 
-        to_update = old.union(new) - old.intersection(new)
+        to_update = new - old
+
+        if not to_update:
+            print("No new listings found.")
+            return
+
         df = df[df['SYMBOL'].isin(to_update)]
 
         for index in df.index:
             try:
-                self.open_live_stock_data(df.loc[index,"SYMBOL"])
-                self.data['registered_stocks'].append(df.loc[index,"SYMBOL"])
-                self.data['all_stocks'][df.loc[index,"SYMBOL"]] = f'{df.loc[index,"SYMBOL"]}_{df.loc[index,"NAME OF COMPANY"]}_{str(self.present)}.csv'
+                symbol = df.loc[index,"SYMBOL"]
+                name = df.loc[index,"NAME OF COMPANY"]
+                self.data['registered_stocks'].append(symbol)
+                self.data['all_stocks'][symbol] = f'{symbol}_{name}_{str(self.present)}.csv'
+                print(f"Downloading new listing: {symbol}")
+                self.download_new(symbol)
             except Exception as e:
-                print("Error: ",df.loc[index,"SYMBOL"])
+                print("Error processing new listing:",df.loc[index,"SYMBOL"], e)
                 pass
 
         self.update_data(self.data)
-
-        print('\nUpdate Successful. Downloading New Files')
-        rmtree(self.data_path) # Delete Data Folder so that new things can be downloaded
-        mkdir(self.data_path)
-
-        self.multiprocess_download_stocks()
+        print('\nUpdate of new listings successful.')
 
     
     def update_fresh_nifty_indices(self):
@@ -123,7 +126,7 @@ class DataHandler:
         files = listdir(self.data_path)
         if not len(files):
             warnings.warn(f"No CSV data files present at {self.data_path} Downloading new data for analysis")
-            self.multiprocess_download_stocks()
+            self.multiprocess_download_stocks(self.data['registered_stocks'])
             
             self.update_fresh_files()
   
@@ -141,7 +144,7 @@ class DataHandler:
 
 
     def update_data(self, updated_data:dict, path:str = './', file:str = 'data.json'):
-        '''the balkan line
+        '''
         Update the data in the json file
         args:
             updated_data: Dictonary you want to update
@@ -213,21 +216,21 @@ class DataHandler:
         try:
             df = self.open_live_stock_data(name)
             df['DATE'] = pd.to_datetime(df['DATE'])
-            ID, NAME, _ = self.all_stocks[name].split('_')
-            save = f"{path}/{ID}_{NAME}_{str(self.present)}.csv"
-            df.to_csv(save,index=None)
+            filename = self.data['all_stocks'][name]
+            save_path = join(path, filename)
+            df.to_csv(save_path, index=None)
         except Exception as e:
-            print(name,'----',e)
+            print(f"Error downloading {name}: {e}")
 
 
-    def multiprocess_download_stocks(self,path:str = './data'):
+    def multiprocess_download_stocks(self, stocks, path:str = './data'):
         '''
         Multiprocess Download stocks
         args:
+            stocks: List of stocks to download
             path: Path where files will be downloaded
             worker: No of workers
         '''
-        stocks = self.data['registered_stocks']
 
         pool = Pool(workers)
         results = pool.map(self.download_new,stocks)
@@ -241,19 +244,23 @@ class DataHandler:
         Check and download new available or unfinished data
         '''
         name = random.choice(self.data['nifty_50'])
-        old = self.open_downloaded_stock(name)
-        new = self.open_live_stock_data(name)
-        if old.iloc[0,0] < new.iloc[0,0]:
-            print('New Data Available. Downloading now....')
-            
-            rmtree(self.data_path)
-            mkdir(self.data_path)
-            self.multiprocess_download_stocks()
+        try:
+            old = self.open_downloaded_stock(name)
+            new = self.open_live_stock_data(name)
+            if old.iloc[0,0] < new.iloc[0,0]:
+                print('New Data Available. Downloading now....')
+                rmtree(self.data_path)
+                mkdir(self.data_path)
+                self.multiprocess_download_stocks(self.data['registered_stocks'])
+        except FileNotFoundError:
+            print("Data file not found for {}. Downloading it.".format(name))
+            self.download_new(name)
+
         
         missing_list = set(self.all_stocks.keys()) - set([i.split('_')[0] for i in listdir('./data')])
         if len(missing_list):
             print('Data Count Mismatch. Downloading Missing.....',missing_list)
-            self.multiprocess_download_stocks()
+            self.multiprocess_download_stocks(list(missing_list))
         
         self.update_fresh_files()
         
