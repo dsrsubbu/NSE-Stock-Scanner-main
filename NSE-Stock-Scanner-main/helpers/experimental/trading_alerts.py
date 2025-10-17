@@ -65,7 +65,7 @@ class Alerts():
             show_popup: Whether to show an alert dialogue. It'll be shown in the notebook on which you are working
         '''
         if len(results):
-            for key in results.key():
+            for key in results.keys():
                 text =  f"{key} has an alert based on {results[key]} strategy"
                 if not silent:
                     myobj = gTTS(text = text, lang='en', slow=False)

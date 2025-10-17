@@ -41,6 +41,7 @@ class NSEData:
         '''
         try:
             response = self.session.get(url, headers=self.headers, cookies=self.cookies)
+            response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
         except requests.exceptions.ConnectionError as e:
             self._force_reset_session()
             response = self.session.get(url, headers=self.headers, cookies=self.cookies)
@@ -90,7 +91,10 @@ class NSEData:
             df.sort_values('absolute_change',ascending=False, inplace=True)
 
             if drop_index: df.drop(0,inplace = True) # Drop the index name
-            return df.iloc[:show_n,[1,9,3,4,5,6,-1]]
+            # Use .loc with column names to preserve them in the returned DataFrame
+            columns_to_return = ['symbol', 'pChange', 'dayHigh', 'dayLow', 'lastPrice', 'prevClose', 'absolute_change']
+            df_subset = df[columns_to_return]
+            return df_subset.head(show_n)
         except (json.JSONDecodeError, KeyError) as e:
             print(f"Error decoding JSON or key error in open_nse_index for {index_name}: {e}")
             return pd.DataFrame()
@@ -145,12 +149,16 @@ class NSEData:
         try:
             x = self.get_live_nse_data(f'https://www.nseindia.com/api/live-analysis-52Week?index={direction}')
             data = x.json()
-            return pd.concat([pd.DataFrame(data['dataLtpGreater20']), pd.DataFrame(data['dataLtpLess20'])],ignore_index = True)
+            df_greater = pd.DataFrame(data.get('dataLtpGreater20', []))
+            df_less = pd.DataFrame(data.get('dataLtpLess20', []))
+            if df_greater.empty and df_less.empty:
+                return pd.DataFrame()
+            return pd.concat([df_greater, df_less], ignore_index=True)
         except (json.JSONDecodeError, KeyError) as e:
             print(f"Error decoding JSON or key error in stocks_at_52W for {direction}: {e}")
             return pd.DataFrame()
 
-    
+
     
 class MarketSentiment:
     '''

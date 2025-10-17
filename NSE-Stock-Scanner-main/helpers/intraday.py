@@ -32,7 +32,13 @@ class IntraDay():
         result = {'Long':[], 'Short':[]}
         
         url = f"https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%20{nifty}"
-        df = pd.DataFrame(NSE.get_live_nse_data(url).json()['data'])
+        try:
+            response = NSE.get_live_nse_data(url)
+            df = pd.DataFrame(response.json()['data'])
+        except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
+            print(f"Failed to fetch or parse data for NIFTY {nifty}: {e}")
+            return result if not return_list else lis
+
 
         if filter_by:
             df = df[df['symbol'].isin(filter_by)]
@@ -87,10 +93,12 @@ class IntraDay():
             range_: Range to consider for previous days
         '''
         df = In.open_downloaded_stock(name)
+        if df.empty:
+            return False
 
-        min_range = int(df.loc[0,'HIGH']  - df.loc[0,'LOW']) # Assume the smallest range is for current day
+        min_range = df.loc[0,'HIGH']  - df.loc[0,'LOW'] # Assume the smallest range is for current day
         for index in df.index[1:range_]:
-            if (int(df.loc[index,'HIGH']  - df.loc[index,'LOW'])) <= min_range:
+            if (df.loc[index,'HIGH']  - df.loc[index,'LOW']) <= min_range:
                 return False
         return True
     

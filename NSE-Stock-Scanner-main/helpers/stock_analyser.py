@@ -68,6 +68,9 @@ class AnalyseStocks(DataHandler):
         Date, Open, Close, Low, High = names
         Average = f'{str(mv)}-SMA'
         
+        if df.empty:
+            return False
+
         stocks = df.sort_index(ascending=False,) # Sort the values else Moving average for new values will be empty
         stocks[Average] = stocks[Close].rolling(mv, min_periods = 1).mean()
         
@@ -97,6 +100,8 @@ class AnalyseStocks(DataHandler):
             return_df = Whether to rturn the whole df or just recent values
         '''
         ticker = df.copy()
+        if ticker.empty:
+            return ticker if return_df else pd.Series(dtype=float)
 
         if ticker.iloc[0,0] > ticker.iloc[1,0]: # if the first Date entry [0,0] is > previous data entry [1,0] then it is in descending order, then reverse it for calculation
             ticker.sort_index(ascending=False, inplace = True)
@@ -128,6 +133,9 @@ class AnalyseStocks(DataHandler):
         '''
         Open, Close, Low, High = names
         d = df.copy()
+        if d.empty:
+            return d if return_df else None
+
         if d.iloc[0,0] > d.iloc[1,0]: # if the first Date entry [0,0] is > previous data entry [1,0] then it is in descending order, then reverse it for calculation
             df.sort_index(ascending=False, inplace = True)
 
@@ -180,6 +188,9 @@ class AnalyseStocks(DataHandler):
         '''
         count  = 0
 
+        if data.empty:
+            return 0
+
         if isinstance(data, pd.DataFrame):
             LOW, HIGH, cloud_green_line_a, cloud_red_line_b,lagging_line,blue_line,red_line = names
             df = data.copy()
@@ -205,9 +216,12 @@ class AnalyseStocks(DataHandler):
         '''
         self.eligible = {}
         for key in self.registered_stocks:
-            result = self.is_ma_eligible(self.open_downloaded_stock(key), limit = limit)
-            if result:
-                self.eligible.update(result)
+            try:
+                result = self.is_ma_eligible(self.open_downloaded_stock(key), limit = limit)
+                if result:
+                    self.eligible.update(result)
+            except Exception as e:
+                logging.error(f"Error checking MA eligibility for '{key}': {e}")
         return self.eligible
     
     
@@ -223,6 +237,11 @@ class AnalyseStocks(DataHandler):
             signal_only: Whether to return absolute value or Buy / Sell Signal
         '''
         df = data.copy()
+        if df.empty:
+            if return_df: return df
+            if signal_only: return "No Signal"
+            return np.nan
+
         df = self.get_MA(df,200, return_df = True)
 
         if df.iloc[0,0] > df.iloc[1,0]: # if the first Date entry [0,0] is > previous data entry [1,0] then it is in descending order, then reverse it for calculation
@@ -275,6 +294,9 @@ class AnalyseStocks(DataHandler):
         '''
         Open, Close, Low, High = names
         data = df.copy()
+        if data.empty:
+            return data if return_df else np.nan
+
         if data.iloc[0,0] > data.iloc[1,0]: # if the first Date entry [0,0] is > previous data entry [1,0] then it is in descending order, then reverse it for calculation
             data.sort_index(ascending=False, inplace = True)
 
@@ -300,6 +322,9 @@ class AnalyseStocks(DataHandler):
         '''
         Open, Close, Low, High = names
         data = df.copy()
+        if data.empty:
+            return data # Return empty dataframe if it's empty
+
         if data.iloc[0,0] > data.iloc[1,0]: # if the first Date entry [0,0] is > previous data entry [1,0] then it is in descending order, then reverse it for calculation
             data.sort_index(ascending=False, inplace = True)
 
@@ -328,6 +353,11 @@ class AnalyseStocks(DataHandler):
         '''
         Open, Close, Low, High, Date = names
         df = data.copy()
+        if df.empty:
+            if return_df: return df
+            if signal_only: return "No Signal"
+            return np.nan
+
         if df.iloc[0,0] > df.iloc[1,0]: # if the first Date entry [0,0] is > previous data entry [1,0] then it is in descending order, then reverse it for calculation
             df.sort_index(ascending=False, inplace = True)
 
@@ -363,6 +393,11 @@ class AnalyseStocks(DataHandler):
         '''
         Open, Close, Low, High = names
         df = data.copy()
+        if df.empty:
+            if return_df: return df
+            if return_adx_only: return np.nan
+            return np.array([np.nan, np.nan, np.nan])
+
         if df.iloc[0,0] > df.iloc[1,0]: # if the first Date entry [0,0] is > previous data entry [1,0] then it is in descending order, then reverse it for calculation
             df.sort_index(ascending=False, inplace = True)
 
@@ -398,6 +433,11 @@ class AnalyseStocks(DataHandler):
         '''
         OPEN, CLOSE, LOW, HIGH = names
         df = data.copy()
+        if df.empty:
+            if return_df: return df
+            if signal_only: return "No Signal"
+            return np.array([np.nan, np.nan])
+
         if df.iloc[0,0] > df.iloc[1,0]: # if the first Date entry [0,0] is > previous data entry [1,0] then it is in descending order, then reverse it for calculation
             df.sort_index(ascending=False, inplace = True)
 
@@ -455,6 +495,9 @@ class AnalyseStocks(DataHandler):
             data = stock.copy()
         
         data.sort_index(ascending=False, inplace = True)
+        if data.empty:
+            return [np.nan] * 9
+
         for mv in mvs:
             results.append(self.get_MA(data, window = mv, return_df = False))
         
@@ -479,6 +522,8 @@ class AnalyseStocks(DataHandler):
             names: Names of columns which have thesew respective values
             lookback: Loockback day. 3 means compare MV values of today vs the day before yesterday
         '''
+        if data.empty:
+            return False
         if data.shape[0] < long_mv:
             return False
 
@@ -508,6 +553,9 @@ class AnalyseStocks(DataHandler):
             threshold: Fraction of the 52W high. if 0.05, it means that difference between current high/low and 52W high/low must be within 5% of 52 Week number
          '''
         Low, High, _52wl, _52wh = names
+        if df.empty:
+            return 'Undeterministic'
+
         if abs(df.loc[0,High] - df.loc[0,_52wh]) <= df.loc[0,_52wh] * threshold: # Near 52 W H means Rising:
             return 'Rising High'
         elif abs(df.loc[0, Low] - df.loc[0,_52wl]) <= df.loc[0,_52wl] * threshold: # Near 52 W Low means Falling
@@ -523,6 +571,9 @@ class AnalyseStocks(DataHandler):
             close: Names of column which has Closing Valuess
         '''
         df = data.copy()
+        if df.empty:
+            return 'No Signal'
+
         if df.iloc[0,0] > df.iloc[1,0]: # if the first Date entry [0,0] is > previous data entry [1,0] then it is in descending order, then reverse it for calculation
             df.sort_index(ascending=False, inplace = True)
 
@@ -552,6 +603,8 @@ class AnalyseStocks(DataHandler):
             Dictonary of 'num_days_back' data  consisting 9 data points. 7 data points including 1 Pivot and 3 S-R each + 2 Upper and Lower Pivot Boundries
         '''
         df = data.copy()
+        if df.empty:
+            return {}
     
         if df.iloc[0,0] < df.iloc[1,0]: # If data is in reverse order, sort again because We want the dat for recent
             df.sort_index(ascending=False, inplace = True)
@@ -624,34 +677,41 @@ class AnalyseStocks(DataHandler):
         rsi_signal = []
 
         for name in nif:
-            df  = self.open_downloaded_stock(name)
+            try:
+                df  = self.open_downloaded_stock(name)
+                if df.empty:
+                    logging.warning(f"No data for {name}, skipping recent info check.")
+                    continue
 
-            LTP = df.loc[0,Close] # last Trading PRice
-            ltp.append(LTP)
+                LTP = df.loc[0,Close] # last Trading PRice
+                ltp.append(LTP)
 
-            T.append(df.loc[0,DATE])
-            names.append(name)
+                T.append(df.loc[0,DATE])
+                names.append(name)
 
-            result = self._recent_info(name, **kwargs)
+                result = self._recent_info(name, **kwargs)
 
-            over_20.append(LTP > result[0])
-            over_50.append(LTP > result[1])
-            over_100.append(LTP > result[2])
-            over_200.append(LTP > result[3])
+                over_20.append(LTP > result[0])
+                over_50.append(LTP > result[1])
+                over_100.append(LTP > result[2])
+                over_200.append(LTP > result[3])
 
-            ichi.append(result[5])
+                ichi.append(result[5])
 
-            c1.append(result[6])
-            c2.append(result[7])
-            c3.append(result[8])
+                c1.append(result[6])
+                c2.append(result[7])
+                c3.append(result[8])
 
-            momentum.append(result[9])
+                momentum.append(result[9])
 
-            index.append(self.get_index(name))
+                index.append(self.get_index(name))
 
-            rsi_signal.append(result[4])
-            macd_signal.append(self.macd_signal(df))
-            cci_signal.append(self.get_CCI(df, signal_only=True))
+                rsi_signal.append(result[4])
+                macd_signal.append(self.macd_signal(df))
+                cci_signal.append(self.get_CCI(df, signal_only=True))
+            except Exception as e:
+                logging.error(f"An error occurred while getting recent info for '{name}': {e}")
+                continue
 
         df = pd.DataFrame({'Date':T,'Name':names,'LTP':ltp,'Index':index,"CCI Signal":cci_signal,'RSI Signal':rsi_signal, "MACD Signal":macd_signal,
         'Over 20-SMA':over_20, 'Over 50-SMA':over_50,'Over 100-SMA':over_100,'Over 200-SMA':over_200,
@@ -682,25 +742,33 @@ class AnalyseStocks(DataHandler):
         result = {}
         
         for name in self.data[stocks]:
-            if not force_live:
-                df = self.open_downloaded_stock(name)
-            else:
-                df = NSE.fifty_days_data(name)
+            try:
+                if not force_live:
+                    df = self.open_downloaded_stock(name)
+                else:
+                    df = NSE.fifty_days_data(name)
 
-            df = self.get_MA(df,window = 50,names = names)
-            df = self.get_MA(df,window = 200,names = names)
+                if df.empty:
+                    logging.warning(f"No data for {name}, skipping consolidation check.")
+                    continue
 
-            closing = df.loc[0,CLOSE]
-            compare = max(df.loc[0,OPEN], closing)
+                df = self.get_MA(df,window = 50,names = names)
+                df = self.get_MA(df,window = 200,names = names)
 
-            if (closing > df.loc[0,'50-MA']) and (df.loc[0,'50-MA'] > df.loc[0,'200-MA']):
-                
-                count = 1
-                for index in df.index[1:lookback_period]:
-                    if compare - (compare * diff) < max(df.loc[index,OPEN],df.loc[index,CLOSE]) < compare + (compare * diff):
-                        count += 1
+                closing = df.loc[0,CLOSE]
+                compare = max(df.loc[0,OPEN], closing)
 
-                if count >= min_count:
-                    result[name] = count
+                if (closing > df.loc[0,'50-MA']) and (df.loc[0,'50-MA'] > df.loc[0,'200-MA']):
+                    
+                    count = 1
+                    for index in df.index[1:lookback_period]:
+                        if compare - (compare * diff) < max(df.loc[index,OPEN],df.loc[index,CLOSE]) < compare + (compare * diff):
+                            count += 1
+
+                    if count >= min_count:
+                        result[name] = count
+            except Exception as e:
+                logging.error(f"An error occurred while processing '{name}': {e}")
+                continue # Move to the next stock
                     
         return dict(sorted(result.items(), key = lambda x: x[1], reverse= True))

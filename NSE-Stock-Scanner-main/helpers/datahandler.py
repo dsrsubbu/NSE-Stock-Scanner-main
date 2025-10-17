@@ -12,12 +12,16 @@ from os.path import join, expanduser
 
 import json
 import warnings
+import logging
 
 import random
 
 from multiprocessing import Pool
 
 NSE = NSEData()
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(processName)s - %(levelname)s - %(message)s')
+
 workers = int(0.8*cpu_count())
 
 
@@ -60,30 +64,34 @@ class DataHandler:
         print('\nUpdating New Listings.....')
         old = set(self.data['registered_stocks'])
         df = pd.read_csv("https://archives.nseindia.com/content/equities/EQUITY_L.csv")
-        df = df[df[' SERIES'] == 'EQ']
-        new = set(df['SYMBOL'].values.tolist())
+        df = df[df[' SERIES'] == 'EQ'].copy()
+        # Clean up column names that might have leading spaces
+        df.columns = df.columns.str.strip()
+        new_symbols = set(df['SYMBOL'].values.tolist())
 
-        to_update = new - old
+        to_update = new_symbols - old
 
         if not to_update:
-            print("No new listings found.")
+            logging.info("No new listings found.")
             return
 
-        df = df[df['SYMBOL'].isin(to_update)]
+        new_listings_df = df[df['SYMBOL'].isin(to_update)]
 
-        for index in df.index:
+        for index in new_listings_df.index:
             try:
-                symbol = df.loc[index,"SYMBOL"]
-                name = df.loc[index,"NAME OF COMPANY"]
+                symbol = new_listings_df.loc[index, "SYMBOL"]
+                company_name = new_listings_df.loc[index, "NAME OF COMPANY"]
+                
+                # Add to registry and create filename mapping BEFORE downloading
                 self.data['registered_stocks'].append(symbol)
-                self.data['all_stocks'][symbol] = f'{symbol}_{name}_{str(self.present)}.csv'
-                print(f"Downloading new listing: {symbol}")
+                self.data['all_stocks'][symbol] = f'{symbol}_{company_name}.csv'
+                self.update_data(self.data) # Persist the new mapping immediately
+                
+                logging.info(f"Found new listing: {symbol}. Downloading...")
                 self.download_new(symbol)
             except Exception as e:
-                print("Error processing new listing:",df.loc[index,"SYMBOL"], e)
-                pass
+                logging.error(f"Error processing new listing {new_listings_df.loc[index, 'SYMBOL']}: {e}")
 
-        self.update_data(self.data)
         print('\nUpdate of new listings successful.')
 
     
@@ -126,7 +134,7 @@ class DataHandler:
         files = listdir(self.data_path)
         if not len(files):
             warnings.warn(f"No CSV data files present at {self.data_path} Downloading new data for analysis")
-            self.multiprocess_download_stocks(self.data['registered_stocks'])
+            self.multiprocess_download_stocks(stocks=list(self.data['registered_stocks']))
             
             self.update_fresh_files()
   
@@ -155,13 +163,16 @@ class DataHandler:
             json.dump(updated_data,f)
 
     
-    def open_live_stock_data(self,name:str,):
+    def open_live_stock_data(self, name:str, from_date=None):
         '''
         Open the fresh stock from the market
         args:
             name: ID of the stock given
+            from_date: Date from which to fetch the data. Defaults to 750 days ago.
         '''
-        return stock_df(symbol=name, from_date = self.present - timedelta(days = 750), to_date = self.present, series="EQ").drop(drop,axis=1) # almost 2 years
+        if from_date is None:
+            from_date = self.present - timedelta(days=750) # almost 2 years
+        return stock_df(symbol=name, from_date=from_date, to_date=self.present, series="EQ").drop(drop, axis=1)
     
     
     def open_downloaded_stock(self, name:str, resample:str = None, kind = 'daily'):
@@ -173,25 +184,26 @@ class DataHandler:
             kind: Kind of data file to open" could be "daily" or any of [minutes_2, minutes_3, minutes_4, minutes_5, minutes_15, minutes_30, minutes_60]
         returns: DataFrame of that stock
         '''
-        if kind == 'daily':
-            print(f'##'*30)
-            print(join(self.data_path,self.all_stocks[name]))
-            print(self.all_stocks[name])
-            df = pd.read_csv(join(self.data_path,self.all_stocks[name]))
-            df['DATE'] = pd.to_datetime(df['DATE'])
+        try:
+            if name not in self.all_stocks:
+                raise KeyError(f"Stock '{name}' not found in all_stocks mapping.")
 
-            if resample:
-                df = self.resample_data(df,resample)
-            return df
-        
-        else:
-            file = f'./intraday_data/{kind}/{self.all_stocks[name]}'
-            try:
+            if kind == 'daily':
+                df = pd.read_csv(join(self.data_path, self.all_stocks[name]))
+            else:
+                file = f'./intraday_data/{kind}/{self.all_stocks[name]}'
                 df = pd.read_csv(file)
-                df['DATE'] = pd.to_datetime(df['DATE'])
-                return df
-            except:
-                print(f"Unable to Open {file}. Check if there's a file in the corresponding directory")
+
+            df['DATE'] = pd.to_datetime(df['DATE'])
+            if resample and kind == 'daily':
+                df = self.resample_data(df, resample)
+            return df
+        except KeyError as e:
+            logging.warning(f"Could not find stock '{name}' in mapping: {e}")
+            return pd.DataFrame()
+        except (FileNotFoundError, KeyError) as e:
+            logging.warning(f"Could not open data file for stock '{name}' (kind: {kind}): {e}")
+            return pd.DataFrame()
 
     
     def resample_data(self, data, to:str  = 'W', names:tuple = ('OPEN','CLOSE','LOW','HIGH','DATE')):
@@ -206,61 +218,141 @@ class DataHandler:
         return data.sort_index(ascending = False).reset_index()
     
 
-    def download_new(self,name:str, path:str = "./data"):
+    def download_new(self, name:str):
         '''
         Download a New Stock Data
         args:
             name: ID / name of the Stock
-            path: Path to the directory where downloaded files have to be stored
          '''
-        try:
+        try: # This method now assumes the filename exists in all_stocks
+            if name not in self.data['all_stocks']:
+                raise KeyError(f"'{name}' not found in all_stocks. Cannot determine filename.")
             df = self.open_live_stock_data(name)
             df['DATE'] = pd.to_datetime(df['DATE'])
             filename = self.data['all_stocks'][name]
-            save_path = join(path, filename)
+            save_path = join(self.data_path, filename)
             df.to_csv(save_path, index=None)
+            logging.info(f"Successfully saved: {name} to {save_path}")
+            return (name, True)
         except Exception as e:
-            print(f"Error downloading {name}: {e}")
+            logging.error(f"Failed to download {name}: {e}")
+            return (name, False)
 
 
-    def multiprocess_download_stocks(self, stocks, path:str = './data'):
+    def multiprocess_download_stocks(self, stocks: list, batch_size: int = 100):
         '''
         Multiprocess Download stocks
         args:
             stocks: List of stocks to download
-            path: Path where files will be downloaded
-            worker: No of workers
+            batch_size: The number of stocks to process in each batch.
         '''
+        # Ensure stocks is a list, not a dictionary
+        if isinstance(stocks, dict):
+            stocks = list(stocks.keys())
 
-        pool = Pool(workers)
-        results = pool.map(self.download_new,stocks)
-        pool.close()
-        pool.join()
+        total_stocks = len(stocks)
+        logging.info(f"Starting download for {total_stocks} stocks in batches of {batch_size}.")
+
+        for i in range(0, total_stocks, batch_size):
+            batch = stocks[i:i + batch_size]
+            logging.info(f"--- Processing batch {i//batch_size + 1}/{(total_stocks + batch_size - 1)//batch_size} ({len(batch)} stocks) ---")
+            
+            with Pool(processes=workers) as pool:
+                results = pool.map(self.download_new, batch)
+            
+            successful_downloads = sum(1 for _, success in results if success)
+            logging.info(f"--- Batch complete. Successfully downloaded {successful_downloads}/{len(batch)} stocks. ---")
+
         return True
 
+    def update_stock_data(self, name: str):
+        '''
+        Appends new data to an existing stock file.
+        args:
+            name: ID / name of the Stock
+        '''
+        try:
+            local_df = self.open_downloaded_stock(name)
+            if local_df.empty:
+                # If the local file is empty or doesn't exist, do a full download.
+                return self.download_new(name)
+
+            # Get the last date from the local file and fetch new data from the next day.
+            last_date = pd.to_datetime(local_df['DATE'].iloc[0]).date()
+            from_date = last_date + timedelta(days=1)
+
+            # Only fetch if the last date is not today or in the future
+            if from_date > self.present:
+                logging.info(f"'{name}' is already up-to-date.")
+                return (name, True)
+
+            new_data_df = self.open_live_stock_data(name, from_date=from_date)
+
+            if not new_data_df.empty:
+                # Combine old and new data, remove duplicates, and sort
+                combined_df = pd.concat([new_data_df, local_df]).drop_duplicates(subset=['DATE'], keep='first')
+                combined_df['DATE'] = pd.to_datetime(combined_df['DATE'])
+                combined_df.sort_values(by='DATE', ascending=False, inplace=True)
+                
+                # Save the updated dataframe
+                save_path = join(self.data_path, self.all_stocks[name])
+                combined_df.to_csv(save_path, index=None)
+                logging.info(f"Successfully updated: {name}")
+            else:
+                logging.info(f"No new data to update for {name}.")
+            
+            return (name, True)
+
+        except Exception as e:
+            logging.error(f"Failed to update {name}: {e}")
+            return (name, False)
+
+    def multiprocess_update_stocks(self, stocks: list, batch_size: int = 100):
+        '''
+        Multiprocess update for a list of stocks.
+        args:
+            stocks: List of stocks to update.
+            batch_size: The number of stocks to process in each batch.
+        '''
+        if isinstance(stocks, dict):
+            stocks = list(stocks.keys())
+
+        total_stocks = len(stocks)
+        logging.info(f"Starting update for {total_stocks} stocks.")
+        with Pool(processes=workers) as pool:
+            results = pool.map(self.update_stock_data, stocks)
+        successful_updates = sum(1 for _, success in results if success)
+        logging.info(f"--- Update complete. Successfully updated {successful_updates}/{total_stocks} stocks. ---")
+        return True
 
     def check_new_data_availability(self):
         '''
         Check and download new available or unfinished data
         '''
-        name = random.choice(self.data['nifty_50'])
+        stock_list_to_check = self.data.get('nifty_50')
+        if not stock_list_to_check: # Fallback if nifty_50 is empty
+            stock_list_to_check = self.data.get('registered_stocks', [])
+        
+        # Ensure the chosen stock exists in all_stocks to prevent KeyError
+        valid_stocks_to_check = [s for s in stock_list_to_check if s in self.all_stocks]
+        if not valid_stocks_to_check:
+            return # Nothing to check if no valid stocks are found
+        name = random.choice(valid_stocks_to_check)
         try:
             old = self.open_downloaded_stock(name)
             new = self.open_live_stock_data(name)
-            if old.iloc[0,0] < new.iloc[0,0]:
-                print('New Data Available. Downloading now....')
-                rmtree(self.data_path)
-                mkdir(self.data_path)
-                self.multiprocess_download_stocks(self.data['registered_stocks'])
+            if not new.empty and (old.empty or old.iloc[0,0] < new.iloc[0,0]):
+                print('New daily data available. Updating all stocks...')
+                self.multiprocess_update_stocks(stocks=list(self.data['registered_stocks']))
         except FileNotFoundError:
             print("Data file not found for {}. Downloading it.".format(name))
             self.download_new(name)
 
         
-        missing_list = set(self.all_stocks.keys()) - set([i.split('_')[0] for i in listdir('./data')])
+        missing_list = set(self.all_stocks.keys()) - {i.split('_')[0] for i in listdir(self.data_path)}
         if len(missing_list):
             print('Data Count Mismatch. Downloading Missing.....',missing_list)
-            self.multiprocess_download_stocks(list(missing_list))
+            self.multiprocess_download_stocks(stocks=list(missing_list))
         
         self.update_fresh_files()
         
@@ -273,13 +365,15 @@ class DataHandler:
         self.data = self.read_data()
 
         for file in files:
-            key, name , _ = file.split('_')
+            # Handles filenames that may contain multiple underscores in the company name.
+            # We only need the symbol, which is the first part.
+            parts = file.split('_', 1) # Split only on the first underscore
+            if len(parts) < 1 or not parts[0]:
+                logging.warning(f"Skipping file with unexpected format: {file}")
+                continue
+            key = parts[0]
             self.data['all_stocks'][key] = file
 
         self.update_data(self.data)
 
     
-
-
-
-
