@@ -75,12 +75,17 @@ class Backtest():
         '''
         Calculate Return on Investment. (Total Profit/ Total Investment) * 100 %
         '''
+        investment = 0
         if row['sells'] == row['buys']:
             investment = sum(row['buy_price'])
 
         elif row['buys'] == row['sells'] + 1:
             investment = sum(row['buy_price'][:-1])
         
+        if not investment:
+            # Avoid division by zero
+            return 0.0
+
         return round((sum(row['p&l']) / investment) *100, 2)
 
         # which one is right formula ?
