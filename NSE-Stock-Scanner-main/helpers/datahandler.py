@@ -1,5 +1,6 @@
 from jugaad_data.nse import stock_df
 from .nse_data import NSEData
+from jugaad_data.nse import bhavcopy_save
 
 from datetime import date, datetime, timedelta
 
@@ -7,7 +8,7 @@ import pandas as pd
 import numpy as np
 
 from os import listdir, mkdir, cpu_count
-from shutil import rmtree
+from shutil import rmtree, os
 from os.path import join, expanduser
 
 import json
@@ -19,6 +20,7 @@ import random
 from multiprocessing import Pool
 
 NSE = NSEData()
+from os import remove
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(processName)s - %(levelname)s - %(message)s')
 
@@ -45,6 +47,7 @@ class DataHandler:
             print('Checking Fresh Data.....')
             self.__fresh()
             self.check_new_data_availability()
+            # self.prune_unregistered_stocks()
 
     
     def update_FnO(self):
@@ -376,4 +379,107 @@ class DataHandler:
 
         self.update_data(self.data)
 
+    def prune_unregistered_stocks(self):
+        '''
+        Removes data files and JSON entries for stocks that are no longer in the 'registered_stocks' list.
+        This acts as a cleanup utility to keep the data directory and the data.json file in sync.
+        '''
+        logging.info("Starting to prune unregistered stocks...")
+        
+        registered_stocks = set(self.data.get('registered_stocks', []))
+        all_stocks_keys = set(self.all_stocks.keys())
+        
+        stocks_to_remove = all_stocks_keys - registered_stocks
+        
+        if not stocks_to_remove:
+            logging.info("No unregistered stocks to prune. Files and JSON are in sync with registered_stocks.")
+            return
+
+        logging.info(f"Found {len(stocks_to_remove)} stocks to prune.")
+        
+        for stock_symbol in stocks_to_remove:
+            # Get filename and remove from all_stocks dict in one go
+            filename = self.data['all_stocks'].pop(stock_symbol, None)
+            
+            if filename:
+                file_path = join(self.data_path, filename)
+                try:
+                    remove(file_path)
+                    logging.info(f"Removed data file and JSON entry for unregistered stock: {stock_symbol}")
+                except FileNotFoundError:
+                    logging.warning(f"File not found for {stock_symbol}, but removed its entry from JSON.")
+        
+        self.update_data(self.data)
+        logging.info("Pruning complete.")
     
+    def download_bhavcopy(self, start_date: date = None, end_date: date = None, days: int = 7):
+        '''
+        Downloads historical Bhavcopy files from the NSE archives.
+
+        Args:
+            start_date (date, optional): The most recent date to start downloading from. 
+                                         Defaults to today.
+            end_date (date, optional): The oldest date to download to. 
+                                       If not provided, it's calculated from `days`.
+            days (int, optional): The number of days to download for, going backwards from 
+                                  start_date. Used if end_date is not specified. Defaults to 7.
+        '''
+        bhavcopy_path = join(self.data_path, 'bhavcopy')
+        if not os.path.exists(bhavcopy_path):
+            os.makedirs(bhavcopy_path)
+            logging.info(f"Created directory: {bhavcopy_path}")
+
+        if not start_date:
+            start_date = date.today()
+        
+        if not end_date:
+            end_date = start_date - timedelta(days=days)
+
+        logging.info(f"Starting Bhavcopy download from {end_date.strftime('%Y-%m-%d')} to {start_date.strftime('%Y-%m-%d')}")
+
+        current_date = start_date
+        while current_date >= end_date:
+            try:
+                bhavcopy_save(current_date, bhavcopy_path)
+                logging.info(f"Successfully downloaded Bhavcopy for {current_date.strftime('%Y-%m-%d')}")
+            except Exception as e:
+                logging.warning(f"Could not download Bhavcopy for {current_date.strftime('%Y-%m-%d')}. It might be a holiday. Error: {e}")
+            current_date -= timedelta(days=1)
+        
+        logging.info("Bhavcopy download process finished.")
+    
+    # def download_bhavcopy(self, start_date: date = None, end_date: date = None, days: int = 7):
+    #     '''
+    #     Downloads historical Bhavcopy files from the NSE archives.
+
+    #     Args:
+    #         start_date (date, optional): The most recent date to start downloading from. 
+    #                                      Defaults to today.
+    #         end_date (date, optional): The oldest date to download to. 
+    #                                    If not provided, it's calculated from `days`.
+    #         days (int, optional): The number of days to download for, going backwards from 
+    #                               start_date. Used if end_date is not specified. Defaults to 7.
+    #     '''
+    #     bhavcopy_path = join(self.data_path, 'bhavcopy')
+    #     if not os.path.exists(bhavcopy_path):
+    #         os.makedirs(bhavcopy_path)
+    #         logging.info(f"Created directory: {bhavcopy_path}")
+
+    #     if not start_date:
+    #         start_date = date.today()
+        
+    #     if not end_date:
+    #         end_date = start_date - timedelta(days=days)
+
+    #     logging.info(f"Starting Bhavcopy download from {end_date.strftime('%Y-%m-%d')} to {start_date.strftime('%Y-%m-%d')}")
+
+    #     current_date = start_date
+    #     while current_date >= end_date:
+    #         try:
+    #             bhavcopy_save(current_date, bhavcopy_path)
+    #             logging.info(f"Successfully downloaded Bhavcopy for {current_date.strftime('%Y-%m-%d')}")
+    #         except Exception as e:
+    #             logging.warning(f"Could not download Bhavcopy for {current_date.strftime('%Y-%m-%d')}. It might be a holiday. Error: {e}")
+    #         current_date -= timedelta(days=1)
+        
+    #     logging.info("Bhavcopy download process finished.")
