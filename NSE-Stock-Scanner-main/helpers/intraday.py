@@ -34,10 +34,16 @@ class IntraDay():
         url = f"https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%20{nifty}"
         try:
             response = NSE.get_live_nse_data(url)
-            df = pd.DataFrame(response.json()['data'])
-        except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
+            response_json = NSE._parse_json_response(response)
+            # Check if the 'data' key exists before creating the DataFrame
+            if 'data' not in response_json:
+                print(f"Error from NSE API for NIFTY {nifty}: {response_json.get('message', 'No data key found.')}")
+                return result if not return_list else lis
+            df = pd.DataFrame(response_json['data'])
+        except (requests.exceptions.RequestException, json.JSONDecodeError, KeyError) as e:
             print(f"Failed to fetch or parse data for NIFTY {nifty}: {e}")
             return result if not return_list else lis
+
 
 
         if filter_by:

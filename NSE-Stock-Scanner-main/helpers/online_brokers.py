@@ -11,7 +11,7 @@ class KiteZerodha():
     Class to connect with Kite platform using your credentials
     All thanks to: https://marketsetup.in/posts/zerodha-login/
     '''
-    def __init__(self, secret_file_path:None = None, user_id:str = None, password:str = None, two_factor_pin:str = None, data_path = './data.json'):
+    def __init__(self, secret_file_path:str = None, user_id:str = None, password:str = None, two_factor_pin:str = None, data_path:str = './data.json'):
         '''
         args:
             secret_file_path: PAth to the file which has your user_id, password and 2 factor Authentication code
@@ -35,8 +35,12 @@ class KiteZerodha():
             self.password = password
             self.two_factor_pin = str(two_factor_pin)
 
-        with open(data_path) as f:
-            self.data = json.load(f)
+        try:
+            with open(data_path) as f:
+                self.data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            print(f"Error loading data from {data_path}: {e}")
+            self.data = {} # Initialize with empty dict to avoid downstream errors
 
         
         self.data_day_limit = {60:400, 30:200, 15:200, 5:100, 3:100, 4:100, 2:60,}
@@ -119,7 +123,12 @@ class KiteZerodha():
             assert False, "Enter proper value for the parameter 'data_type'. One of: day / min"
    
 
-        assert (name in self.data['all_stocks']) or (name in self.name_code_mapping) or (code), "Enter a valid stock name OR code. Check NSE website for code"
+        # It seems the intention was to check against a list of all stocks,
+        # but intraday_data.json doesn't have 'all_stocks'.
+        # The check is now against the symbols present in the 'data' array of the loaded JSON.
+        all_symbols_in_data = [stock.get('symbol') for stock in self.data.get('data', [])]
+
+        assert (name in all_symbols_in_data) or (name in self.name_code_mapping) or (code), "Enter a valid stock name OR code. Check NSE website for code"
         assert name in self.name_code_mapping, "Name and it's code has not been updated. Help me help you update all 1600 names and code. Please find the code and Update the file or raise an issue / feature request for specific stock"
         
         code = self.name_code_mapping[name] if not code else code

@@ -4,6 +4,13 @@ from datetime import date, datetime,timedelta
 from bs4 import BeautifulSoup
 import json
 import zipfile, io
+import gzip
+import zlib
+try:
+    import brotli
+    _HAS_BROTLI = True
+except Exception:
+    _HAS_BROTLI = False
 
 current_date = date.today()
 
@@ -29,24 +36,123 @@ class NSEData:
     
     def _force_reset_session(self):
         self.session = requests.Session()
+        # Disable automatic decompression so we can handle it manually
+        self.session.headers.update({'Accept-Encoding': 'gzip, deflate, br'})
+        # Disable auto-decompression
+        self.session.stream = False
         request = self.session.get(self.baseurl, headers=self.headers)
         self.cookies = dict(request.cookies)
 
         
-    def get_live_nse_data(self, url:str):
+    def get_live_nse_data(self, url:str, retries:int = 3, backoff:float = 2.0):
         '''
-        Get Live market data available on NSE website as PDF
+        Get Live market data available on NSE website. Retries on connection errors with exponential backoff.
         args:
            url: corresponding url
+           retries: number of retry attempts
+           backoff: backoff multiplier for exponential delay
         '''
-        try:
-            response = self.session.get(url, headers=self.headers, cookies=self.cookies)
-            response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
-        except requests.exceptions.ConnectionError as e:
-            self._force_reset_session()
-            response = self.session.get(url, headers=self.headers, cookies=self.cookies)
+        import time
+        for attempt in range(retries):
+            try:
+                response = self.session.get(url, headers=self.headers, cookies=self.cookies, timeout=10)
+                response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
+                return response
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+                if attempt < retries - 1:
+                    self._force_reset_session()
+                    wait_time = backoff ** attempt
+                    time.sleep(wait_time)
+                else:
+                    raise
 
         return response
+
+
+    def _parse_json_response(self, resp):
+        """
+        Robustly parse a requests.Response as JSON, handling compressed encodings.
+        Respects the Content-Encoding header and tries: gzip → zlib → brotli → raw text decode
+        """
+        content = resp.content
+        encoding = resp.headers.get('content-encoding', '').lower()
+        
+        # Try based on Content-Encoding header first
+        if 'gzip' in encoding:
+            try:
+                decompressed = gzip.decompress(content).decode('utf-8', errors='ignore')
+                return json.loads(decompressed)
+            except Exception:
+                pass
+        
+        if 'deflate' in encoding:
+            try:
+                decompressed = zlib.decompress(content).decode('utf-8', errors='ignore')
+                return json.loads(decompressed)
+            except Exception:
+                pass
+        
+        if 'br' in encoding or 'brotli' in encoding:
+            if _HAS_BROTLI:
+                try:
+                    decompressed = brotli.decompress(content).decode('utf-8', errors='ignore')
+                    return json.loads(decompressed)
+                except Exception as e:
+                    pass
+            else:
+                import warnings
+                warnings.warn("Response is brotli-compressed but 'brotli' module not installed. Install it with: pip install brotli")
+        
+        # Try as-is first (normal case or auto-decompressed by requests)
+        try:
+            return resp.json()
+        except Exception:
+            pass
+        
+        # Blind attempt: try gzip (magic bytes: 0x1f 0x8b)
+        if len(content) >= 2 and content[:2] == b'\x1f\x8b':
+            try:
+                decompressed = gzip.decompress(content).decode('utf-8', errors='ignore')
+                return json.loads(decompressed)
+            except Exception:
+                pass
+        
+        # Blind attempt: try zlib
+        try:
+            decompressed = zlib.decompress(content)
+            return json.loads(decompressed.decode('utf-8', errors='ignore'))
+        except Exception:
+            pass
+        
+        # Blind attempt: try brotli (last resort)
+        if _HAS_BROTLI:
+            try:
+                decompressed = brotli.decompress(content)
+                return json.loads(decompressed.decode('utf-8', errors='ignore'))
+            except Exception:
+                pass
+        
+        # Fallback: try to decode raw bytes as UTF-8 and parse JSON
+        try:
+            text = content.decode('utf-8', errors='ignore')
+            if text.strip():
+                return json.loads(text)
+        except Exception:
+            pass
+        
+        # Last resort: try latin-1 decoding
+        try:
+            text = content.decode('latin-1', errors='ignore')
+            if text.strip():
+                return json.loads(text)
+        except Exception:
+            pass
+        
+        # If all else fails, return empty dict with warning
+        import warnings
+        warnings.warn(f"Could not parse response (Content-Encoding: {encoding}). "
+                      f"First 100 bytes: {content[:100]!r}")
+        return {}
     
 
     def current_indices_status(self,show_n:int=5):
@@ -57,7 +163,7 @@ class NSEData:
         '''
         try:
             response = self.get_live_nse_data("https://www.nseindia.com/api/allIndices")
-            data = response.json()
+            data = self._parse_json_response(response)
             df = pd.DataFrame(data['data'])
             df['absolute_change'] = df['percentChange'].apply(lambda x: abs(x))
             df.sort_values('absolute_change',ascending=False, inplace=True)
@@ -84,7 +190,7 @@ class NSEData:
 
         try:
             resp = self.get_live_nse_data(url)
-            data = resp.json()
+            data = self._parse_json_response(resp)
             df = pd.DataFrame(data['data'])
             df['absolute_change'] = df['pChange'].apply(lambda x: abs(x))
             # df['Index'] = df['symbol'].apply(lambda x: In.get_index(x))
@@ -110,7 +216,8 @@ class NSEData:
             whole_data: Get the Whole Current +  historical data of VIX
         '''
         try:
-            result = self.get_live_nse_data('https://www1.nseindia.com/live_market/dynaContent/live_watch/VixDetails.json').json()
+            resp = self.get_live_nse_data('https://www1.nseindia.com/live_market/dynaContent/live_watch/VixDetails.json')
+            result = self._parse_json_response(resp)
             if whole_data:
                 return result
             print(f"Current VIX: {result['currentVixSnapShot'][0]['CURRENT_PRICE']}")
@@ -128,7 +235,7 @@ class NSEData:
         url = f"https://www.nseindia.com/api/historical/cm/equity?symbol={symbol}&series=[%22EQ%22]&from={self.from_}&to={self.to}"
         try:
             result = self.get_live_nse_data(url = url)
-            data = result.json()
+            data = self._parse_json_response(result)
             df = pd.DataFrame(data['data'])
             df.columns = df.columns.map({'CH_SYMBOL':'SYMBOL',"CH_TRADE_HIGH_PRICE":"HIGH","CH_TRADE_LOW_PRICE":"LOW","CH_OPENING_PRICE":"OPEN","CH_CLOSING_PRICE":"CLOSE",
                     "CH_TIMESTAMP":"DATE","CH_52WEEK_LOW_PRICE":"52W L","CH_52WEEK_HIGH_PRICE":"52W H"})
@@ -148,7 +255,7 @@ class NSEData:
         '''
         try:
             x = self.get_live_nse_data(f'https://www.nseindia.com/api/live-analysis-52Week?index={direction}')
-            data = x.json()
+            data = self._parse_json_response(x)
             df_greater = pd.DataFrame(data.get('dataLtpGreater20', []))
             df_less = pd.DataFrame(data.get('dataLtpLess20', []))
             if df_greater.empty and df_less.empty:
