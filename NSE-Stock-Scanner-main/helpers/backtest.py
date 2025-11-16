@@ -75,32 +75,22 @@ class Backtest():
         '''
         Calculate Return on Investment. (Total Profit/ Total Investment) * 100 %
         '''
-        investment = 0
-        if row['sells'] == row['buys']:
-            investment = sum(row['buy_price'])
+        total_profit = sum(row['p&l'])
+        buy_prices = row['buy_price']
+        total_investment = 0
 
+        if row['sells'] == row['buys']:
+            # All trades are closed. Investment is the sum of all buy prices.
+            total_investment = sum(buy_prices)
         elif row['buys'] == row['sells'] + 1:
-            investment = sum(row['buy_price'][:-1])
+            # One trade is still open. ROI is calculated on completed trades.
+            total_investment = sum(buy_prices[:-1])
         
-        if not investment:
+        if not total_investment:
             # Avoid division by zero
             return 0.0
-
-        return round((sum(row['p&l']) / investment) *100, 2)
-
-        # which one is right formula ?
-
-        # if row['sells'] == row['buys']:
-        #     investment = row['buy_price']
-
-        # elif row['buys'] == row['sells'] + 1:
-        #     investment = row['buy_price'][:-1]
-
-        # result = 0
-        # for i in range(len(investment)):
-        #     result += ((row['p&l'][i]) / investment[i]) * 100
-
-        # return round(result/len(investment), 2)
+        
+        return round((total_profit / total_investment) * 100, 2)
 
 
     def backtest(self, strategy:str, min_days:int = 365, top_n:int = 10, stocks:str = 'nifty_50', return_df:bool = True, **kwargs):

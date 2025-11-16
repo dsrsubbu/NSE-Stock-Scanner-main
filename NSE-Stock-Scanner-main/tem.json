@@ -1,0 +1,61 @@
+Long :
+ Name - Change - ATR - Change% - Remaining Move - Index:
+
+('TMCV', np.float64(0.0), nan, '0.0%', np.float64(nan), 'Other') 
+
+('TATAINVEST', np.float64(12.0), np.float64(349.23), '1.55%', np.float64(-0.97), 'Nifty 500') 
+
+('PFC', np.float64(4.45), np.float64(8.98), '1.18%', np.float64(-0.5), 'Nifty 100') 
+
+('BANKINDIA', np.float64(1.8), np.float64(3.54), '1.23%', np.float64(-0.49), 'Nifty 200') 
+
+('TEJASNET', np.float64(10.5), np.float64(14.32), '2.07%', np.float64(-0.27), 'Nifty 500') 
+
+('LODHA', np.float64(22.0), np.float64(28.67), '1.8%', np.float64(-0.23), 'Nifty 100') 
+
+('EIDPARRY', np.float64(38.0), np.float64(27.49), '3.65%', np.float64(0.38), 'Nifty 500') 
+
+('AAVAS', np.float64(73.8), np.float64(48.1), '4.49%', np.float64(0.53), 'Nifty 500') 
+
+('FACT', np.float64(33.0), np.float64(20.17), '3.77%', np.float64(0.64), 'Nifty 500') 
+
+('KIRLOSENG', np.float64(75.0), np.float64(30.89), '7.43%', np.float64(1.43), 'Nifty 500') 
+
+('MFSL', np.float64(107.6), np.float64(36.07), '6.72%', np.float64(1.98), 'Nifty 200') 
+
+Short :
+ Name - Change - ATR - Change% - Remaining Move - Index:
+
+('SBICARD', np.float64(5.95), np.float64(21.99), '0.68%', np.float64(-0.73), 'Nifty 200') 
+
+('COLPAL', np.float64(13.4), np.float64(38.25), '0.61%', np.float64(-0.65), 'Nifty 200') 
+
+('IKS', np.float64(15.7), np.float64(44.02), '0.94%', np.float64(-0.64), 'Nifty 500') 
+
+('DEEPAKNTR', np.float64(11.9), np.float64(28.18), '0.68%', np.float64(-0.58), 'Nifty 500') 
+
+('TBOTEK', np.float64(26.2), np.float64(61.47), '1.62%', np.float64(-0.57), 'Nifty 500') 
+
+('SIEMENS', np.float64(27.9), np.float64(62.21), '0.91%', np.float64(-0.55), 'Nifty 100') 
+
+('JUBLPHARMA', np.float64(18.0), np.float64(38.99), '1.6%', np.float64(-0.54), 'Nifty 500') 
+
+('BASF', np.float64(42.0), np.float64(88.77), '0.93%', np.float64(-0.53), 'Nifty 500') 
+
+('RAINBOW', np.float64(15.5), np.float64(32.85), '1.14%', np.float64(-0.53), 'Nifty 500') 
+
+('TIMKEN', np.float64(33.5), np.float64(71.54), '1.1%', np.float64(-0.53), 'Nifty 500') 
+
+('TITAN', np.float64(33.8), np.float64(65.39), '0.88%', np.float64(-0.48), 'Nifty 50') 
+
+('VTL', np.float64(7.0), np.float64(13.38), '1.56%', np.float64(-0.48), 'Nifty 500') 
+
+('DALBHARAT', np.float64(24.0), np.float64(40.61), '1.17%', np.float64(-0.41), 'Nifty 500') 
+
+('ICICIBANK', np.float64(11.8), np.float64(18.1), '0.86%', np.float64(-0.35), 'Nifty 50') 
+
+('BHARATFORG', np.float64(25.4), np.float64(34.87), '1.8%', np.float64(-0.27), 'Nifty 200') 
+
+('SUNDARMFIN', np.float64(151.9), np.float64(109.75), '3.21%', np.float64(0.38), 'Nifty 500') 
+
+('PIIND', np.float64(150.5), np.float64(77.56), '4.01%', np.float64(0.94), 'Nifty 200')

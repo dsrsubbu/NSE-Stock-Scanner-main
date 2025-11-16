@@ -198,7 +198,7 @@ class NSEData:
 
             if drop_index: df.drop(0,inplace = True) # Drop the index name
             # Use .loc with column names to preserve them in the returned DataFrame
-            columns_to_return = ['symbol', 'pChange', 'dayHigh', 'dayLow', 'lastPrice', 'prevClose', 'absolute_change']
+            columns_to_return = ['symbol', 'pChange', 'dayHigh', 'dayLow', 'lastPrice', 'previousClose', 'absolute_change']
             df_subset = df[columns_to_return]
             return df_subset.head(show_n)
         except (json.JSONDecodeError, KeyError) as e:

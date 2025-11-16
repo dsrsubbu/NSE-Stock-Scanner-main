@@ -1,3 +1,5 @@
 .venv/
 /NSE-Stock-Scanner-main/venv
 /NSE-Stock-Scanner-main/data_old
+/NSE-Stock-Scanner-main/data
+/NSE-Stock-Scanner-main/data_bhavcopy

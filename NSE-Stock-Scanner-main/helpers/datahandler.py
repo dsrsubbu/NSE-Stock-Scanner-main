@@ -18,6 +18,7 @@ import logging
 import random
 
 from multiprocessing import Pool
+import tempfile
 
 NSE = NSEData()
 from os import remove
@@ -31,14 +32,15 @@ drop = ['SERIES','PREV. CLOSE','VWAP','VOLUME','VALUE','NO OF TRADES', 'LTP']
 
 
 class DataHandler:
-    def __init__(self, data_path = './data', check_fresh = False):
+    def __init__(self, data_path = './data', check_fresh = False, bhavcopy_path = './data_bhavcopy'):
         '''
         '''
         self.present = date.today()
         self.week_num = self.present.strftime("%W")
         
         self.data_path = data_path
-        
+        self.bhavcopy_path = bhavcopy_path
+
         self.read_data = DataHandler.read_data # because it is static
         self.data = self.read_data()
         self.all_stocks = self.data['all_stocks']
@@ -424,10 +426,25 @@ class DataHandler:
             days (int, optional): The number of days to download for, going backwards from 
                                   start_date. Used if end_date is not specified. Defaults to 7.
         '''
-        bhavcopy_path = join(self.data_path, 'bhavcopy')
-        if not os.path.exists(bhavcopy_path):
-            os.makedirs(bhavcopy_path)
-            logging.info(f"Created directory: {bhavcopy_path}")
+        bhavcopy_path = self.bhavcopy_path
+        try:
+            if not os.path.exists(bhavcopy_path):
+                os.makedirs(bhavcopy_path)
+                logging.info(f"Created directory: {bhavcopy_path}")
+        except PermissionError:
+            # Fallback to a user-writable directory if creating under bhavcopy_path fails
+            fallback_base = join(expanduser('~'), 'NSE-Stock-Scanner-data')
+            bhavcopy_path = join(fallback_base, 'bhavcopy')
+            try:
+                if not os.path.exists(bhavcopy_path):
+                    os.makedirs(bhavcopy_path)
+                logging.warning(f"Permission denied creating {self.bhavcopy_path}. Using fallback: {bhavcopy_path}")
+            except PermissionError:
+                # Last resort: use system temp directory
+                bhavcopy_path = join(tempfile.gettempdir(), 'nse_bhavcopy')
+                if not os.path.exists(bhavcopy_path):
+                    os.makedirs(bhavcopy_path)
+                logging.warning(f"Permission denied creating fallback directories. Using temp directory: {bhavcopy_path}")
 
         if not start_date:
             start_date = date.today()
@@ -448,38 +465,4 @@ class DataHandler:
         
         logging.info("Bhavcopy download process finished.")
     
-    # def download_bhavcopy(self, start_date: date = None, end_date: date = None, days: int = 7):
-    #     '''
-    #     Downloads historical Bhavcopy files from the NSE archives.
-
-    #     Args:
-    #         start_date (date, optional): The most recent date to start downloading from. 
-    #                                      Defaults to today.
-    #         end_date (date, optional): The oldest date to download to. 
-    #                                    If not provided, it's calculated from `days`.
-    #         days (int, optional): The number of days to download for, going backwards from 
-    #                               start_date. Used if end_date is not specified. Defaults to 7.
-    #     '''
-    #     bhavcopy_path = join(self.data_path, 'bhavcopy')
-    #     if not os.path.exists(bhavcopy_path):
-    #         os.makedirs(bhavcopy_path)
-    #         logging.info(f"Created directory: {bhavcopy_path}")
-
-    #     if not start_date:
-    #         start_date = date.today()
-        
-    #     if not end_date:
-    #         end_date = start_date - timedelta(days=days)
-
-    #     logging.info(f"Starting Bhavcopy download from {end_date.strftime('%Y-%m-%d')} to {start_date.strftime('%Y-%m-%d')}")
-
-    #     current_date = start_date
-    #     while current_date >= end_date:
-    #         try:
-    #             bhavcopy_save(current_date, bhavcopy_path)
-    #             logging.info(f"Successfully downloaded Bhavcopy for {current_date.strftime('%Y-%m-%d')}")
-    #         except Exception as e:
-    #             logging.warning(f"Could not download Bhavcopy for {current_date.strftime('%Y-%m-%d')}. It might be a holiday. Error: {e}")
-    #         current_date -= timedelta(days=1)
-        
-    #     logging.info("Bhavcopy download process finished.")
+    
