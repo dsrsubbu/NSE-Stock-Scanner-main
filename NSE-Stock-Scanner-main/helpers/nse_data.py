@@ -2,6 +2,10 @@ import pandas as pd
 import requests
 from datetime import date, datetime,timedelta
 from bs4 import BeautifulSoup
+import logging
+import os
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import json
 import zipfile, io
 import gzip
@@ -271,15 +275,79 @@ class MarketSentiment:
     '''
     Get the market sentiment based on TICK, TRIN etc
     '''
+    def __init__(self, trust_all_ssl: bool = None, ca_bundle_path: str = None):
+        '''
+        Options:
+            trust_all_ssl: If True, on SSL verification failures try again with verify=False (not secure - use with caution)
+            ca_bundle_path: Path to a CA bundle file to use for verification (optional)
+        '''
+        # If not specified, use environment variable NSE_TRUST_ALL_SSL (True/1/yes)
+        if trust_all_ssl is None:
+            trust_all_ssl = str(os.environ.get('NSE_TRUST_ALL_SSL', 'False')).lower() in ('1', 'true', 'yes')
+        self.trust_all_ssl = bool(trust_all_ssl)
+        self.ca_bundle_path = ca_bundle_path
+
     def check_fresh_data(self):
         '''
         Get fresh updated data scraped from the website https://www.traderscockpit.com/?pageView=live-nse-advance-decline-ratio-chart
         '''
-        page = requests.get('https://www.traderscockpit.com/?pageView=live-nse-advance-decline-ratio-chart')
+        try:
+            page = self._safe_get('https://www.traderscockpit.com/?pageView=live-nse-advance-decline-ratio-chart')
+            if page is None:
+                logging.warning('Failed to fetch live sentiment page; returning empty values')
+                return [], None
+        except Exception as e:
+            logging.warning(f'Exception while fetching fresh data: {e}')
+            return [], None
         soup = BeautifulSoup(page.content, "lxml")
         latest_updated_on = soup.find("span", {"class": "hm-time"})
         divs = soup.find_all("div", {"class": "col-sm-6"})
         return divs, latest_updated_on
+
+    def _safe_get(self, url, timeout=10):
+        """Get a URL with retries and SSL-fallback. Returns Response or None on failure."""
+        session = requests.Session()
+        retries = Retry(total=3, backoff_factor=0.5, status_forcelist=[429,500,502,503,504], allowed_methods=frozenset(['GET']))
+        session.mount('https://', HTTPAdapter(max_retries=retries))
+        try:
+            r = session.get(url, timeout=timeout, verify=self.ca_bundle_path if self.ca_bundle_path is not None else True)
+            r.raise_for_status()
+            return r
+        except requests.exceptions.SSLError as e:
+            # Try with verify=False as a fallback (not recommended for production)
+            logging.warning(f"SSL error fetching {url}: {e}. Trying again with verify=False")
+            if not getattr(self, 'trust_all_ssl', False):
+                logging.warning('trust_all_ssl is False; not retrying with verify=False')
+                return None
+            try:
+                # Disable insecure warning for this retry
+                import urllib3
+                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                r = session.get(url, timeout=timeout, verify=False)
+                r.raise_for_status()
+                return r
+            except Exception as e2:
+                logging.warning(f"Failed to fetch {url} with verify=False as well: {e2}")
+                return None
+        except Exception as e:
+            logging.warning(f"Failed to fetch {url}: {e}")
+            return None
+
+    def check_ca(self):
+        """Return CA verification suggestions.
+        Returns dict with possible 'ca_bundle' path and 'installed' flag for certifi.
+        """
+        result = {'installed': False, 'ca_bundle': None, 'message': ''}
+        try:
+            import certifi
+            result['installed'] = True
+            result['ca_bundle'] = certifi.where()
+            result['message'] = f"certifi detected; suggested CA bundle: {result['ca_bundle']}"
+            return result
+        except Exception:
+            # Not installed
+            result['message'] = "certifi not installed. Consider running: pip install --upgrade certifi"
+            return result
     
     
     def get_TRIN(self, divs):
@@ -333,7 +401,10 @@ class MarketSentiment:
         '''
         result = {}
         divs, latest_updated_on = self.check_fresh_data()
-        
+        if not divs or latest_updated_on is None:
+            logging.warning('No live sentiment data available from source. Returning empty result')
+            return result
+
         result['Latest Updated on'] =  latest_updated_on.text[7:]
         result.update(self.get_TICK(divs))
         result.update(self.get_TRIN(divs))

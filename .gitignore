@@ -3,3 +3,6 @@
 /NSE-Stock-Scanner-main/data_old
 /NSE-Stock-Scanner-main/data
 /NSE-Stock-Scanner-main/data_bhavcopy
+/NSE-Stock-Scanner-main/test/__pycache__
+/NSE-Stock-Scanner-main/helpers/__pycache__
+*.pyc

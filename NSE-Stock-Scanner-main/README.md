@@ -44,6 +44,53 @@ For usage, see the docstring of code or the example ipython Notebook `Test.ipynb
 - NOTE: There is some bug in fetching live data and data refresh so if you are not ubale to get some data, or get an error; restart kernal and run cells again
 ```
 
+## SSL/TLS Troubleshooting for Live Data
+
+If you encounter SSL errors like "certificate verify failed" while fetching live market data, try the following:
+
+1. Install/upgrade certifi and use it as a CA bundle (recommended):
+
+```bash
+pip install --upgrade certifi
+```
+
+Then in Python:
+```python
+import certifi
+from helpers.nse_data import MarketSentiment
+ms = MarketSentiment(ca_bundle_path=certifi.where())
+print(ms.get_live_sentiment())
+```
+
+You can also use the helper to check what CA bundle is recommended on your system:
+
+```python
+from helpers.nse_data import MarketSentiment
+ms = MarketSentiment()
+print(ms.check_ca())  # Shows whether certifi is installed and the recommended CA bundle path
+```
+
+2. As a last resort for local experiments only, you can enable an insecure fallback which retries without SSL verification (not recommended in production):
+
+```python
+ms = MarketSentiment(trust_all_ssl=True)
+print(ms.get_live_sentiment())
+```
+
+3. Alternatively, set an environment variable to toggle the fallback globally:
+
+Windows PowerShell:
+```powershell
+setx NSE_TRUST_ALL_SSL true
+```
+
+Linux/macOS:
+```bash
+export NSE_TRUST_ALL_SSL=true
+```
+
+Please prefer the CA bundle approach (#1) over disabling verification.
+
 
 **Please share your ideas, views, requirements, knowledge, bug reports, fixes and most importantly; reviews.**
 

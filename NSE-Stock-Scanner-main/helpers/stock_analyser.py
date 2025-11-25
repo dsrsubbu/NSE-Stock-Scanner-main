@@ -200,10 +200,24 @@ class AnalyseStocks(DataHandler):
             current = df.iloc[0,:]
             if current[cloud_green_line_a] < current[LOW] and current[cloud_red_line_b] < current[LOW]: # Cloud Below
                 count += 1
-            if df.loc[26,lagging_line] > df.loc[26,HIGH]: # Lagging Line
-                count += 1
-            if df.loc[1,blue_line] <= df.loc[1,red_line].min() and current[blue_line] >= current[red_line]: # Cross Over
-                count += 1
+            # Lagging line check requires at least 27 rows (0..26)
+            if df.shape[0] > 26:
+                try:
+                    if df.iloc[26][lagging_line] > df.iloc[26][HIGH]: # Lagging Line
+                        count += 1
+                except Exception as e:
+                    logging.debug(f"Ichi_count lagging_line check failed: {e}")
+            else:
+                logging.debug(f"Ichi_count: insufficient rows ({df.shape[0]}) for lagging_line check; skipping")
+            # Cross-over check requires at least 2 rows (0 and 1) — use position-based access
+            if df.shape[0] > 1:
+                try:
+                    prev_blue = df.iloc[1][blue_line]
+                    prev_red = df.iloc[1][red_line]
+                    if prev_blue <= prev_red and current[blue_line] >= current[red_line]: # Cross Over
+                        count += 1
+                except Exception as e:
+                    logging.debug(f"Ichi_count crossover check failed: {e}")
         
         return count
     
@@ -684,31 +698,44 @@ class AnalyseStocks(DataHandler):
                     continue
 
                 LTP = df.loc[0,Close] # last Trading PRice
-                ltp.append(LTP)
-
-                T.append(df.loc[0,DATE])
-                names.append(name)
-
+                # compute signals and results first to ensure we append atomically
                 result = self._recent_info(name, **kwargs)
 
-                over_20.append(LTP > result[0])
-                over_50.append(LTP > result[1])
-                over_100.append(LTP > result[2])
-                over_200.append(LTP > result[3])
+                over_20_flag = (LTP > result[0])
+                over_50_flag = (LTP > result[1])
+                over_100_flag = (LTP > result[2])
+                over_200_flag = (LTP > result[3])
 
-                ichi.append(result[5])
+                ichi_flag = result[5]
 
-                c1.append(result[6])
-                c2.append(result[7])
-                c3.append(result[8])
+                c1_flag = result[6]
+                c2_flag = result[7]
+                c3_flag = result[8]
 
-                momentum.append(result[9])
+                momentum_flag = result[9]
 
-                index.append(self.get_index(name))
+                index_val = self.get_index(name)
+                rsi_signal_val = result[4]
+                macd_signal_val = self.macd_signal(df)
+                cci_signal_val = self.get_CCI(df, signal_only=True)
 
-                rsi_signal.append(result[4])
-                macd_signal.append(self.macd_signal(df))
-                cci_signal.append(self.get_CCI(df, signal_only=True))
+                # Append all computed values in one place to keep lists consistent
+                ltp.append(LTP)
+                T.append(df.loc[0,DATE])
+                names.append(name)
+                over_20.append(over_20_flag)
+                over_50.append(over_50_flag)
+                over_100.append(over_100_flag)
+                over_200.append(over_200_flag)
+                ichi.append(ichi_flag)
+                c1.append(c1_flag)
+                c2.append(c2_flag)
+                c3.append(c3_flag)
+                momentum.append(momentum_flag)
+                index.append(index_val)
+                rsi_signal.append(rsi_signal_val)
+                macd_signal.append(macd_signal_val)
+                cci_signal.append(cci_signal_val)
             except Exception as e:
                 logging.error(f"An error occurred while getting recent info for '{name}': {e}")
                 continue
