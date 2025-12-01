@@ -218,13 +218,15 @@ class NSEData:
         https://www.motilaloswal.com/blog-details/6-things-that-the-Volatility-Index-(VIX)-indicates-to-you../1929
         args:
             whole_data: Get the Whole Current +  historical data of VIX
+        https://www1.nseindia.com/live_market/dynaContent/live_watch/VixDetails.json
+        https://www.nseindia.com/api/historicalOR/vixhistory?from=27-11-2025&to=28-11-2025
         '''
         try:
-            resp = self.get_live_nse_data('https://www1.nseindia.com/live_market/dynaContent/live_watch/VixDetails.json')
+            resp = self.get_live_nse_data('https://www.nseindia.com/api/historicalOR/vixhistory?from=27-11-2025&to=28-11-2025')
             result = self._parse_json_response(resp)
             if whole_data:
                 return result
-            print(f"Current VIX: {result['currentVixSnapShot'][0]['CURRENT_PRICE']}")
+            print(f"Current VIX: {result['data'][0]['EOD_CLOSE_INDEX_VAL']}")
         except (json.JSONDecodeError, KeyError) as e:
             print(f"Error decoding JSON or key error in get_VIX: {e}")
             return None

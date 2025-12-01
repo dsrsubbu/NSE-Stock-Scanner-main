@@ -136,7 +136,7 @@ class Backtest():
         x = pd.DataFrame(self.history).T
         x = x.loc[x['sells']>0,:] # No need for those where no sell has been made. Won't be able to produce any win%. Division by Zero error
         # x['Total P&L'] = x['p&l'].apply(lambda x: sum(x))
-        x['ROI'] = x.apply(lambda row: self.calculate_ROI(row),axis=1)
+        x['ROI'] = [self.calculate_ROI(row) for i, row in x.iterrows()]
         x['wins'] = x['p&l'].apply(lambda x: sum([True if i >0 else False for i in x]))
         x['losses'] = x.apply(lambda row: row['sells'] - row['wins'],axis=1)
         x['win%'] = x.apply(lambda row: round((row['wins'])/row['sells'],2),axis=1)
